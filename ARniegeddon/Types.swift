@@ -31,9 +31,9 @@
 import SpriteKit
 
 enum Sounds {
-  static let fire =      SKAction.playSoundFileNamed("sprayBug",
+  static let bang =      SKAction.playSoundFileNamed("bang",
                                                      waitForCompletion: false)
-  static let hit =       SKAction.playSoundFileNamed("hitBug",
+  static let hit =       SKAction.playSoundFileNamed("niceShot",
                                                      waitForCompletion: false)
   static let bugspray =  SKAction.playSoundFileNamed("catchBugspray",
                                                      waitForCompletion: false)
@@ -41,11 +41,14 @@ enum Sounds {
                                                      waitForCompletion: false)
   static let lose =      SKAction.playSoundFileNamed("lose.wav",
                                                      waitForCompletion: false)
+  static let gunclick = SKAction.playSoundFileNamed("gunclick.wav", waitForCompletion: false)
+  static let beargrowl = SKAction.playSoundFileNamed("beargrowl", waitForCompletion: false)
 }
 
 enum NodeType: String {
   case target = "target"
-  case civilian = "civilian"
+  case bear = "bear"
+  case stephcurry = "stephcurry"
   case bang = "bang"
   case rifle = "rifle"
   case bullet = "bullet"

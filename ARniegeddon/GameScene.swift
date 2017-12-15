@@ -10,9 +10,38 @@ class GameScene: SKScene {
   var timer: Timer!
   var messageNode: SKLabelNode!
   var scoreNode: SKLabelNode!
+  var levelupmessage: SKSpriteNode!
+  var isGamePaused = true {
+    didSet {
+      if isGamePaused {
+        if let timer = timer {
+          timer.invalidate()
+        }
+      } else {
+        levelupmessage.isHidden = true
+        startTimer()
+      }
+    }
+  }
+  var howtoStep = -1 {
+    didSet {
+      displayHowToNextStep()
+    }
+  }
   var score = 0 {
     didSet {
-      scoreNode.text = String(format: "CURRENT SCORE: %d", score)
+      scoreNode.text = String(format: "LVL: %d SCORE: %d", level, score)
+
+      if level == 1 && score == 100 {
+        // level up!
+        showLevelUpMessage()
+        level += 1
+      }
+    }
+  }
+  var level = 1 {
+    didSet {
+      score = 0
     }
   }
 
@@ -37,17 +66,19 @@ class GameScene: SKScene {
   private func createTarget() {
     guard let currentFrame = sceneView.session.currentFrame else { return }
 
+    startTimer()
+
     var type = NodeType.target
     if Int(arc4random_uniform(5)) == 0 {
-      // create civilian
-      type = NodeType.civilian
+      // create bear
+      type = NodeType.bear
     }
 
     // Create a transform with a translation of 0.2 meters in front of the camera
     var translation = matrix_identity_float4x4
     translation.columns.3.x = Float.random(min: -1, max: 1)
-    translation.columns.3.y = Float.random(min: -1, max: 1)
-    translation.columns.3.z = Float.random(min: -3, max: -0.2)
+    translation.columns.3.y = Float.random(min: -1, max: -0.5)
+    translation.columns.3.z = Float.random(min: -10, max: -0.2)
     let transform = simd_mul(currentFrame.camera.transform, translation)
     let anchor = Anchor(transform: transform)
     anchor.type = type
@@ -57,6 +88,22 @@ class GameScene: SKScene {
     let deadlineTime = DispatchTime.now() + .seconds(3)
     DispatchQueue.main.asyncAfter(deadline: deadlineTime) { [weak self, anchor] in
       self?.sceneView.session.remove(anchor: anchor)
+    }
+  }
+
+  private func displayHowToNextStep() {
+    for node in children {
+      if node.name == "howto" {
+        node.removeFromParent()
+      }
+    }
+    if howtoStep > 0 && howtoStep <= 5 {
+      let welcome = SKSpriteNode(imageNamed: String(format: "welcome%d", howtoStep))
+      welcome.name = "howto"
+      addChild(welcome)
+    } else if howtoStep > 0 {
+      howtoStep = -1
+      isGamePaused = false
     }
   }
 
@@ -73,6 +120,15 @@ class GameScene: SKScene {
     }
 
     updateBullets()
+  }
+
+  private func getRandomTimeInterval() -> TimeInterval {
+    if level == 1 {
+      return Double(Float.random(min: 1, max: 3))
+    } else if level == 2 {
+      return Double(Float.random(min: 0.5, max: 2))
+    }
+    return Double(Float.random(min: 0, max: 1))
   }
 
   private func updateBullets() {
@@ -116,7 +172,10 @@ class GameScene: SKScene {
   }
 
   private func startTimer() {
-    timer = Timer.scheduledTimer(timeInterval: 3.0, target: self, selector: #selector(GameScene.createTarget), userInfo: nil, repeats: true)
+    if let timer = timer {
+      timer.invalidate()
+    }
+    timer = Timer.scheduledTimer(timeInterval: getRandomTimeInterval(), target: self, selector: #selector(GameScene.createTarget), userInfo: nil, repeats: false)
   }
 
   private func setUpWorld() {
@@ -125,9 +184,16 @@ class GameScene: SKScene {
 
     initializeBullets()
     addWeaponAnchor()
-    startTimer()
+    initializeLevelUpMessage()
+    howtoStep = 1
 
     isWorldSetUp = true
+  }
+
+  private func initializeLevelUpMessage() {
+    levelupmessage = SKSpriteNode(imageNamed: "levelupmessage")
+    levelupmessage.isHidden = true
+    addChild(levelupmessage)
   }
 
   override func update(_ currentTime: TimeInterval) {
@@ -169,8 +235,7 @@ class GameScene: SKScene {
   }
 
   private func remove(rifle anchor: ARAnchor) {
-    // TODO: sound!!
-//    run(Sounds.bugspray)
+    print("removed weapon")
     sceneView.session.remove(anchor: anchor)
   }
 
@@ -178,7 +243,7 @@ class GameScene: SKScene {
     sight = SKSpriteNode(imageNamed: "sight")
     addChild(sight)
 
-    scoreNode = SKLabelNode(text: String(format: "CURRENT SCORE: %d", score))
+    scoreNode = SKLabelNode(text: String(format: "LVL: %d SCORE: %d", level, score))
     scoreNode.position.x = -frame.width / 2 + scoreNode.frame.size.width / 2
     scoreNode.position.y = frame.height / 2 - scoreNode.frame.size.height - 5
     scoreNode.fontName = "Chalkduster"
@@ -196,6 +261,15 @@ class GameScene: SKScene {
     srand48(Int(Date.timeIntervalSinceReferenceDate))
   }
 
+  private func showLevelUpMessage() {
+    isGamePaused = true
+
+    Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] (_) in
+      self?.run(Sounds.win)
+      self?.levelupmessage.isHidden = false
+    }
+  }
+
   private func showMessage(_ text: String) {
     messageNode.text = text
     messageNode.numberOfLines = 0
@@ -205,9 +279,27 @@ class GameScene: SKScene {
   }
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if howtoStep > 0 {
+      howtoStep += 1
+      return
+    }
+    if isGamePaused {
+      isGamePaused = false
+      return
+    }
+    guard let currentFrame = sceneView.session.currentFrame else { return }
+
     if numBullets < 1 {
-      // TODO: play empty sound?
+      run(Sounds.gunclick)
       showMessage("Out of ammo! Pick up a weapon!")
+      // if there's no weapons on the scene, add one.
+      for anchor in currentFrame.anchors {
+        if let node = sceneView.node(for: anchor),
+          node.name == NodeType.rifle.rawValue {
+          return
+        }
+        addWeaponAnchor()
+      }
       return
     }
 
@@ -217,20 +309,31 @@ class GameScene: SKScene {
 
     var hitTarget: SKNode?
     for node in hitNodes {
-      if node.name == NodeType.target.rawValue || node.name == NodeType.civilian.rawValue {
+      if node.name == NodeType.target.rawValue || node.name == NodeType.bear.rawValue {
         hitTarget = node
         break
       }
     }
 
+    if hitTarget == nil {
+      run(Sounds.bang)
+    }
+
     if let hitTarget = hitTarget,
       let anchor = sceneView.anchor(for: hitTarget) {
+
+      var hitNodeType: NodeType?
+      if hitTarget.name == NodeType.target.rawValue {
+        hitNodeType = NodeType.target
+      } else if hitTarget.name == NodeType.bear.rawValue {
+        hitNodeType = NodeType.bear
+      }
 
       var bangAnchor: Anchor?
       let bangAction = SKAction.run {
         bangAnchor = self.addBangAnchor()
       }
-      let firstActionGroup = SKAction.group([Sounds.hit, bangAction])
+      let firstActionGroup = SKAction.group([Sounds.bang, bangAction, hitNodeType == NodeType.bear ? Sounds.beargrowl : Sounds.hit])
 
       let removeHitTargetAction = SKAction.run {
         self.sceneView.session.remove(anchor: anchor)
@@ -242,10 +345,9 @@ class GameScene: SKScene {
       let sequence = [SKAction.wait(forDuration: 0.3), firstActionGroup, SKAction.wait(forDuration: 0.2), removeHitTargetAction]
       hitTarget.run(SKAction.sequence(sequence))
 
-
-      if hitTarget.name == NodeType.target.rawValue {
+      if hitNodeType == NodeType.target {
         score += 100
-      } else if hitTarget.name == NodeType.civilian.rawValue {
+      } else if hitNodeType == NodeType.bear {
         score -= 200
       }
     }
