@@ -11,6 +11,9 @@ class GameScene: SKScene {
   var messageNode: SKLabelNode!
   var scoreNode: SKLabelNode!
   var levelupmessage: SKSpriteNode!
+  var dontshootcurrymsg: SKSpriteNode!
+  var isGameOver = false
+  var gameovermsg: SKSpriteNode!
   var isGamePaused = true {
     didSet {
       if isGamePaused {
@@ -19,6 +22,8 @@ class GameScene: SKScene {
         }
       } else {
         levelupmessage.isHidden = true
+        dontshootcurrymsg.isHidden = true
+        gameovermsg.isHidden = true
         startTimer()
       }
     }
@@ -32,8 +37,11 @@ class GameScene: SKScene {
     didSet {
       scoreNode.text = String(format: "LVL: %d SCORE: %d", level, score)
 
-      if level == 1 && score == 100 {
+      if level == 1 && score == 600 {
         // level up!
+        showLevelUpMessage()
+        level += 1
+      } else if level == 2 && score == 600 {
         showLevelUpMessage()
         level += 1
       }
@@ -72,6 +80,8 @@ class GameScene: SKScene {
     if Int(arc4random_uniform(5)) == 0 {
       // create bear
       type = NodeType.bear
+    } else if level == 3 && Int(arc4random_uniform(4)) == 0 {
+      type = NodeType.stephcurry
     }
 
     // Create a transform with a translation of 0.2 meters in front of the camera
@@ -127,6 +137,8 @@ class GameScene: SKScene {
       return Double(Float.random(min: 1, max: 3))
     } else if level == 2 {
       return Double(Float.random(min: 0.5, max: 2))
+    } else if level == 3 {
+      return Double(Float.random(min: 0.5, max: 1.5))
     }
     return Double(Float.random(min: 0, max: 1))
   }
@@ -194,6 +206,14 @@ class GameScene: SKScene {
     levelupmessage = SKSpriteNode(imageNamed: "levelupmessage")
     levelupmessage.isHidden = true
     addChild(levelupmessage)
+
+    dontshootcurrymsg = SKSpriteNode(imageNamed: "dontshootcurry")
+    dontshootcurrymsg.isHidden = true
+    addChild(dontshootcurrymsg)
+
+    gameovermsg = SKSpriteNode(imageNamed: "gameover")
+    gameovermsg.isHidden = true
+    addChild(gameovermsg)
   }
 
   override func update(_ currentTime: TimeInterval) {
@@ -243,9 +263,13 @@ class GameScene: SKScene {
     sight = SKSpriteNode(imageNamed: "sight")
     addChild(sight)
 
+    var maybeextrapadding: CGFloat = 0
+    if UIDevice.current.modelName == "iPhone X" {
+      maybeextrapadding = 40
+    }
     scoreNode = SKLabelNode(text: String(format: "LVL: %d SCORE: %d", level, score))
     scoreNode.position.x = -frame.width / 2 + scoreNode.frame.size.width / 2
-    scoreNode.position.y = frame.height / 2 - scoreNode.frame.size.height - 5
+    scoreNode.position.y = frame.height / 2 - scoreNode.frame.size.height - 5 - maybeextrapadding
     scoreNode.fontName = "Chalkduster"
     scoreNode.fontSize = 20
     scoreNode.fontColor = UIColor(red: 0.125, green: 0.76, blue: 0.055, alpha: 1)
@@ -278,9 +302,33 @@ class GameScene: SKScene {
     }
   }
 
+  private func gameover() {
+    isGamePaused = true
+    isGameOver = true
+    run(Sounds.lose)
+    gameovermsg.isHidden = false
+  }
+
+  private func showDontShootCurryMsg() {
+    dontshootcurrymsg.isHidden = false
+  }
+
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if isGameOver {
+      level = 1
+      score = 0
+      isGameOver = false
+      isGamePaused = false
+      return
+    }
     if howtoStep > 0 {
       howtoStep += 1
+      return
+    }
+    if level == 3 && !levelupmessage.isHidden {
+      levelupmessage.isHidden = true
+      // show one more message
+      showDontShootCurryMsg()
       return
     }
     if isGamePaused {
@@ -309,7 +357,7 @@ class GameScene: SKScene {
 
     var hitTarget: SKNode?
     for node in hitNodes {
-      if node.name == NodeType.target.rawValue || node.name == NodeType.bear.rawValue {
+      if node.name == NodeType.target.rawValue || node.name == NodeType.bear.rawValue || node.name == NodeType.stephcurry.rawValue {
         hitTarget = node
         break
       }
@@ -327,13 +375,21 @@ class GameScene: SKScene {
         hitNodeType = NodeType.target
       } else if hitTarget.name == NodeType.bear.rawValue {
         hitNodeType = NodeType.bear
+      } else if hitTarget.name == NodeType.stephcurry.rawValue {
+        hitNodeType = NodeType.stephcurry
       }
 
       var bangAnchor: Anchor?
       let bangAction = SKAction.run {
         bangAnchor = self.addBangAnchor()
       }
-      let firstActionGroup = SKAction.group([Sounds.bang, bangAction, hitNodeType == NodeType.bear ? Sounds.beargrowl : Sounds.hit])
+      var group = [Sounds.bang, bangAction]
+      if hitNodeType == NodeType.bear {
+        group.append(Sounds.beargrowl)
+      } else if hitNodeType == NodeType.target {
+        group.append(Sounds.hit)
+      }
+      let firstActionGroup = SKAction.group(group)
 
       let removeHitTargetAction = SKAction.run {
         self.sceneView.session.remove(anchor: anchor)
@@ -349,6 +405,8 @@ class GameScene: SKScene {
         score += 100
       } else if hitNodeType == NodeType.bear {
         score -= 200
+      } else if hitNodeType == NodeType.stephcurry {
+        gameover()
       }
     }
 
